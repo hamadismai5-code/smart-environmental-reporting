@@ -4,6 +4,7 @@ import {
   Route,
 } from "react-router-dom";
 
+import AdminApp from "./admin/AdminApp";
 import Navbar from "./components/Navbar";
 
 import Home from "./pages/Home";
@@ -44,6 +45,11 @@ function App() {
           path="/about"
           element={<About />}
         />
+
+        <Route
+          path="/admin"
+          element={<AdminApp />}
+       />
 
       </Routes>
 

@@ -1,0 +1,1139 @@
+
+        params.append("search", search.trim());
+      }
+
+      if (status) {
+        params.append("status", status);
+      }
+
+      const response = await fetch(
+        `${REPORTS_API}?${params.toString()}`
+      );
+
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(
+          data.message || "Unable to load reports"
+        );
+      }
+
+      setReports(data.reports || []);
+    } catch (err) {
+      console.error("Reports error:", err);
+
+      setError(
+        err.message || "Unable to load reports"
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ==========================================
+  // LOAD DEPARTMENTS
+  // ==========================================
+
+  const loadDepartments = async () => {
+    try {
+      const response = await fetch(DEPARTMENTS_API);
+      const data = await response.json();
+
+      if (data.success) {
+        setDepartments(data.departments || []);
+      }
+    } catch (err) {
+      console.error("Departments error:", err);
+    }
+  };
+
+  // ==========================================
+  // LOAD OFFICERS
+  // ==========================================
+
+  const loadOfficers = async () => {
+    try {
+      const response = await fetch(OFFICERS_API);
+      const data = await response.json();
+
+      if (data.success) {
+        setOfficers(data.officers || []);
+      }
+    } catch (err) {
+      console.error("Officers error:", err);
+    }
+  };
+
+  // ==========================================
+  // LOAD REPORT HISTORY
+  // ==========================================
+
+  const loadHistory = async (reportId) => {
+    try {
+      setHistoryLoading(true);
+      setHistory([]);
+
+      const response = await fetch(
+        `${HISTORY_API}?report_id=${encodeURIComponent(
+          reportId
+        )}`
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          `History server error: ${response.status}`
+        );
+      }
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(
+          data.message || "Unable to load report history"
+        );
+      }
+
+      setHistory(data.history || []);
+    } catch (err) {
+      console.error("History error:", err);
+      setHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  // ==========================================
+  // INITIAL LOAD
+  // ==========================================
+
+  useEffect(() => {
+    loadReports();
+    loadDepartments();
+    loadOfficers();
+  }, []);
+
+  // ==========================================
+  // STATUS FILTER
+  // ==========================================
+
+  useEffect(() => {
+    loadReports();
+  }, [status]);
+
+  // ==========================================
+  // OPEN REPORT
+  // ==========================================
+
+  const openReport = (report) => {
+    setSelectedReport(report);
+
+    setManagement({
+      department_id: report.department_id
+        ? String(report.department_id)
+        : "",
+
+      officer_id: report.officer_id
+        ? String(report.officer_id)
+        : "",
+
+      status: report.status || "Sent",
+
+      comment: "",
+    });
+
+    setError("");
+    setSuccess("");
+
+    // IMPORTANT:
+    // Load history when report is opened
+    loadHistory(report.report_id);
+  };
+
+  // ==========================================
+  // CLOSE REPORT
+  // ==========================================
+
+  const closeReport = () => {
+    setSelectedReport(null);
+    setHistory([]);
+    setHistoryLoading(false);
+    setError("");
+    setSuccess("");
+  };
+
+  // ==========================================
+  // HANDLE INPUT
+  // ==========================================
+
+  const handleManagementChange = (event) => {
+    const { name, value } = event.target;
+
+    setManagement((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+  };
+
+  // ==========================================
+  // SAVE CHANGES
+  // ==========================================
+
+  const saveChanges = async () => {
+    if (!selectedReport) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError("");
+      setSuccess("");
+
+      const response = await fetch(UPDATE_API, {
+        method: "POST",
+
+        headers: {
+          "Content-Type": "application/json",
+        },
+
+        body: JSON.stringify({
+          report_id: selectedReport.report_id,
+
+          department_id: management.department_id
+            ? Number(management.department_id)
+            : null,
+
+          officer_id: management.officer_id
+            ? Number(management.officer_id)
+            : null,
+
+          status: management.status,
+
+          comment: management.comment.trim(),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Server error: ${response.status}`
+        );
+      }
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(
+          data.message || "Unable to update report"
+        );
+      }
+
+      setSuccess(
+        "Report updated successfully."
+      );
+
+      // Find selected department
+      const department = departments.find(
+        (item) =>
+          String(item.id) ===
+          String(management.department_id)
+      );
+
+      // Find selected officer
+      const officer = officers.find(
+        (item) =>
+          String(item.id) ===
+          String(management.officer_id)
+      );
+
+      // Update table immediately
+      setReports((previous) =>
+        previous.map((item) => {
+          if (
+            item.report_id !==
+            selectedReport.report_id
+          ) {
+            return item;
+          }
+
+          return {
+            ...item,
+rtment_id || null,
+
+            department:
+              department?.name || null,
+
+            officer_id:
+              management.officer_id || null,
+
+            officer:
+              officer?.full_name || null,
+
+            status:
+              management.status,
+
+            updated_at:
+              new Date().toISOString(),
+          };
+        })
+      );
+
+      // Update modal
+      setSelectedReport((previous) => ({
+        ...previous,
+
+        department_id:
+          management.department_id || null,
+
+        department:
+          department?.name || null,
+
+        officer_id:
+          management.officer_id || null,
+
+        officer:
+          officer?.full_name || null,
+
+        status:
+          management.status,
+      }));
+
+      // Clear comment
+      setManagement((previous) => ({
+        ...previous,
+        comment: "",
+      }));
+
+      // Reload reports
+      await loadReports();
+
+      // Reload history so new update appears
+      await loadHistory(
+        selectedReport.report_id
+      );
+    } catch (err) {
+      console.error("Update error:", err);
+
+      setError(
+        err.message ||
+        "Unable to update report"
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ==========================================
+  // SEARCH
+  // ==========================================
+
+  const handleSearch = (event) => {
+    event.preventDefault();
+    loadReports();
+  };
+
+  // ==========================================
+  // STATUS CLASS
+  // ==========================================
+
+  const getStatusClass = (reportStatus) => {
+    switch (reportStatus) {
+      case "Sent":
+        return "sent";
+
+      case "Received":
+        return "received";
+
+      case "Under Review":
+        return "under-review";
+
+      case "In Progress":
+        return "in-progress";
+
+      case "Resolved":
+        return "resolved";
+
+      case "Rejected":
+        return "rejected";
+
+      default:
+        return "";
+    }
+  };
+
+  // ==========================================
+  // FORMAT DATE
+  // ==========================================
+
+  const formatDate = (date) => {
+    if (!date) {
+      return "—";
+    }
+
+    return new Date(date).toLocaleString();
+  };
+
+  // ==========================================
+  // FILTER OFFICERS
+  // ==========================================
+
+  const filteredOfficers =
+    management.department_id
+      ? officers.filter(
+          (officer) =>
+            String(
+              officer.department_id
+            ) ===
+            String(
+              management.department_id
+            )
+        )
+      : officers;
+
+  // ==========================================
+  // RENDER
+  // ==========================================
+
+  return (
+    <main className="admin-main">
+
+      {/* HEADER */}
+      <div className="admin-topbar">
+        <div>
+          <p className="admin-welcome">
+            Municipal Administration
+          </p>
+
+          <h1>Reports</h1>
+
+          <p className="admin-description">
+            Review, assign and manage
+            community environmental reports.
+          </p>
+        </div>
+
+        <button
+          className="admin-refresh-btn"
+          onClick={loadReports}
+          disabled={loading}
+        >
+          <RefreshCw
+            size={18}
+            className={
+              loading ? "spin" : ""
+            }
+          />
+
+          Refresh
+        </button>
+      </div>
+
+      {/* SUCCESS */}
+      {success && (
+        <div className="admin-success">
+          <CheckCircle2 size={20} />
+
+          <span>{success}</span>
+        </div>
+      )}
+
+      {/* ERROR */}
+      {error && (
+        <div className="admin-error">
+          <AlertCircle size={20} />
+
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* SEARCH */}
+      <section className="reports-toolbar">
+        <form
+          className="reports-search"
+          onSubmit={handleSearch}
+        >
+          <Search size={19} />
+
+          <input
+            type="text"
+            placeholder="Search report ID, problem, location..."
+            value={search}
+            onChange={(event) =>
+              setSearch(event.target.value)
+            }
+          />
+
+          <button type="submit">
+            Search
+          </button>
+        </form>
+
+        <select
+          className="reports-filter"
+          value={status}
+          onChange={(event) =>
+            setStatus(event.target.value)
+          }
+        >
+          <option value="">
+            All Statuses
+          </option>
+
+          <option value="Sent">
+            Sent
+          </option>
+
+          <option value="Received">
+            Received
+          </option>
+
+          <option value="Under Review">
+            Under Review
+          </option>
+
+          <option value="In Progress">
+            In Progress
+          </option>
+
+          <option value="Resolved">
+            Resolved
+          </option>
+
+          <option value="Rejected">
+            Rejected
+          </option>
+        </select>
+      </section>
+
+      {/* SUMMARY */}
+      <section className="reports-summary">
+        <div>
+          <FileText size={20} />
+
+          <span>Total Reports</span>
+
+          <strong>
+            {loading
+              ? "—"
+              : reports.length}
+          </strong>
+        </div>
+      </section>
+
+      {/* TABLE */}
+      <section className="admin-reports-table">
+        {loading ? (
+          <div className="reports-loading">
+            Loading reports...
+          </div>
+        ) : reports.length === 0 ? (
+          <div className="reports-empty">
+            <FileText size={42} />
+
+            <h3>
+              No reports found
+            </h3>
+
+            <p>
+              No reports match your current
+              search or filter.
+            </p>
+          </div>
+        ) : (
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Report ID</th>
+                  <th>Problem</th>
+                  <th>Location</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {reports.map((report) => (
+                  <tr key={report.id}>
+
+                    <td>
+                      <strong className="report-id">
+                        {report.report_id}
+                      </strong>
+                    </td>
+
+                    <td>
+                      <div className="problem-cell">
+                        <div className="problem-icon">
+                          <AlertCircle size={17} />
+                        </div>
+
+                        <span>
+                          {report.problem_type}
+                        </span>
+                      </div>
+                    </td>
+
+                    <td>
+                      <div className="location-cell">
+                        <MapPin size={16} />
+
+                        <span>
+                          {report.location ||
+                            "Not provided"}
+                        </span>
+                      </div>
+                    </td>
+
+                    <td>
+                      <span
+                        className={`report-status ${getStatusClass(
+                          report.status
+                        )}`}
+                      >
+                        {report.status}
+                      </span>
+                    </td>
+
+                    <td>
+                      <div className="date-cell">
+                        <CalendarDays size={15} />
+
+                        {new Date(
+                          report.created_at
+                        ).toLocaleDateString()}
+                      </div>
+                    </td>
+
+                    <td>
+                      <button
+                        className="view-report-btn"
+                        onClick={() =>
+                          openReport(report)
+                        }
+                      >
+                        <Eye size={16} />
+                        View
+                      </button>
+                    </td>
+
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* ==========================================
+          REPORT MANAGEMENT MODAL
+          ========================================== */}
+
+      {selectedReport && (
+        <div
+          className="report-modal-overlay"
+          onClick={closeReport}
+        >
+          <div
+            className="report-modal report-management-modal"
+            onClick={(event) =>
+              event.stopPropagation()
+            }
+          >
+
+            {/* MODAL HEADER */}
+            <div className="report-modal-header">
+              <div>
+                <span>
+                  Report Management
+                </span>
+
+                <h2>
+                  {selectedReport.report_id}
+                </h2>
+              </div>
+
+              <button
+                onClick={closeReport}
+                aria-label="Close"
+              >
+                <X size={21} />
+              </button>
+            </div>
+
+            {/* =====================================
+                REPORT INFORMATION
+                ===================================== */}
+
+            <div className="management-section">
+              <div className="management-section-title">
+                <FileText size={18} />
+
+                <h3>
+                  Report Information
+                </h3>
+              </div>
+
+              <div className="report-detail-grid">
+
+                <div>
+                  <label>
+                    Problem Type
+                  </label>
+
+                  <strong>
+                    {selectedReport.problem_type}
+                  </strong>
+                </div>
+
+                <div>
+                  <label>
+                    Current Status
+                  </label>
+
+                  <span
+                    className={`report-status ${getStatusClass(
+                      selectedReport.status
+                    )}`}
+                  >
+                    {selectedReport.status}
+                  </span>
+                </div>
+
+                <div>
+                  <label>
+                    Location
+                  </label>
+
+                  <strong>
+                    {selectedReport.location ||
+                      "Not provided"}
+                  </strong>
+                </div>
+
+                <div>
+                  <label>
+                    Submitted
+                  </label>
+
+                  <strong>
+                    {formatDate(
+                      selectedReport.created_at
+                    )}
+                  </strong>
+                </div>
+
+              </div>
+            </div>
+
+            {/* =====================================
+                ASSIGNMENT & STATUS
+                ===================================== */}
+
+            <div className="management-section">
+
+              <div className="management-section-title">
+                <Building2 size={18} />
+
+                <h3>
+                  Assignment & Status
+                </h3>
+              </div>
+
+              <div className="management-form-grid">
+
+                {/* DEPARTMENT */}
+                <div className="management-field">
+                  <label>
+                    Department
+                  </label>
+
+                  <div className="management-select">
+                    <Building2 size={17} />
+
+                    <select
+                      name="department_id"
+                      value={
+                        management.department_id
+                      }
+                      onChange={
+                        handleManagementChange
+                      }
+                    >
+                      <option value="">
+                        Select Department
+                      </option>
+
+                      {departments.map(
+                        (department) => (
+                          <option
+                            key={department.id}
+                            value={department.id}
+                          >
+                            {department.name}
+                          </option>
+                        )
+                      )}
+                    </select>
+                  </div>
+                </div>
+
+                {/* OFFICER */}
+                <div className="management-field">
+                  <label>
+                    Assigned Officer
+                  </label>
+
+                  <div className="management-select">
+                    <UserRound size={17} />
+
+                    <select
+                      name="officer_id"
+                      value={
+                        management.officer_id
+                      }
+                      onChange={
+                        handleManagementChange
+                      }
+                    >
+                      <option value="">
+                        Select Officer
+                      </option>
+
+                      {filteredOfficers.map(
+                        (officer) => (
+                          <option
+                            key={officer.id}
+                            value={officer.id}
+                          >
+                            {officer.full_name}
+                            {" — "}
+                            {officer.department}
+                          </option>
+                        )
+                      )}
+                    </select>
+                  </div>
+                </div>
+
+                {/* STATUS */}
+                <div className="management-field">
+                  <label>
+                    Update Status
+                  </label>
+
+                  <div className="management-select">
+                    <Clock size={17} />
+
+                    <select
+                      name="status"
+                      value={
+                        management.status
+                      }
+                      onChange={
+                        handleManagementChange
+                      }
+                    >
+                      <option value="Sent">
+                        Sent
+                      </option>
+
+                      <option value="Received">
+                        Received
+                      </option>
+
+                      <option value="Under Review">
+                        Under Review
+                      </option>
+
+                      <option value="In Progress">
+                        In Progress
+                      </option>
+
+                      <option value="Resolved">
+                        Resolved
+                      </option>
+
+                      <option value="Rejected">
+                        Rejected
+                      </option>
+                    </select>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* COMMENT */}
+              <div className="management-field">
+                <label>
+                  Comment / Update
+                </label>
+
+                <div className="management-textarea">
+                  <MessageSquare size={18} />
+
+                  <textarea
+                    name="comment"
+                    value={
+                      management.comment
+                    }
+                    onChange={
+                      handleManagementChange
+                    }
+                    placeholder="Write a comment or update about this report..."
+                    rows={4}
+                  />
+                </div>
+              </div>
+
+              {/* ACTIONS */}
+              <div className="management-actions">
+
+                <button
+                  className="management-cancel-btn"
+                  onClick={closeReport}
+                  disabled={saving}
+                >
+                  <X size={17} />
+                  Cancel
+                </button>
+
+                <button
+                  className="management-save-btn"
+                  onClick={saveChanges}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <>
+                      <RefreshCw
+                        size={17}
+                        className="spin"
+                      />
+
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save size={17} />
+
+                      Save Changes
+                    </>
+                  )}
+                </button>
+
+              </div>
+
+            </div>
+
+            {/* =====================================
+                CITIZEN DESCRIPTION
+                ===================================== */}
+
+            <div className="management-section">
+
+              <div className="management-section-title">
+                <MessageSquare size={18} />
+
+                <h3>
+                  Citizen Description
+                </h3>
+              </div>
+
+              <div className="report-description-box">
+                <p>
+                  {selectedReport.description}
+                </p>
+              </div>
+
+            </div>
+
+            {/* =====================================
+                EVIDENCE PHOTO
+                ===================================== */}
+
+            {selectedReport.image_path && (
+              <div className="management-section">
+
+                <div className="management-section-title">
+                  <Eye size={18} />
+
+                  <h3>
+                    Evidence Photo
+                  </h3>
+                </div>
+
+                <div className="report-photo-box">
+                  <img
+                    src={`${API_BASE}/${selectedReport.image_path}`}
+                    alt="Report evidence"
+                  />
+                </div>
+
+              </div>
+            )}
+
+            {/* =====================================
+                GPS MAP
+                ===================================== */}
+
+            {selectedReport.latitude &&
+              selectedReport.longitude && (
+                <div className="management-section">
+
+                  <div className="management-section-title">
+                    <Navigation size={18} />
+
+                    <h3>
+                      Incident Location
+                    </h3>
+                  </div>
+
+                  {/* MAP */}
+                  <ReportMap
+                    latitude={
+                      selectedReport.latitude
+                    }
+                    longitude={
+                      selectedReport.longitude
+                    }
+                    reportId={
+                      selectedReport.report_id
+                    }
+                    location={
+                      selectedReport.location
+                    }
+                  />
+
+                  {/* COORDINATES */}
+                  <div className="report-location-box">
+                    <MapPin size={18} />
+
+                    <div>
+                      <label>
+                        GPS Coordinates
+                      </label>
+
+                      <p>
+                        {selectedReport.latitude},{" "}
+                        {selectedReport.longitude}
+                      </p>
+                    </div>
+                  </div>
+
+                </div>
+              )}
+
+            {/* =====================================
+                REPORT HISTORY
+                ===================================== */}
+
+            <div className="management-section">
+
+              <div className="management-section-title">
+                <Clock size={18} />
+
+                <h3>
+                  Report History
+                </h3>
+              </div>
+
+              {historyLoading ? (
+                <div className="history-loading">
+                  <RefreshCw
+                    size={20}
+                    className="spin"
+                  />
+
+                  <span>
+                    Loading report history...
+                  </span>
+                </div>
+              ) : history.length === 0 ? (
+                <div className="history-empty">
+                  <Clock size={22} />
+
+                  <p>
+                    No history available.
+                  </p>
+                </div>
+              ) : (
+                <div className="report-history">
+
+                  {history.map(
+                    (item, index) => (
+                      <div
+                        className="history-item"
+                        key={item.id}
+                      >
+
+                        <div className="history-line">
+
+                          <div className="history-dot">
+                            <CheckCircle2
+                              size={14}
+                            />
+                          </div>
+
+                          {index !==
+                            history.length - 1 && (
+                            <div className="history-connector" />
+                          )}
+
+                        </div>
+
+                        <div className="history-content">
+
+                          <div className="history-top">
+
+                            <span
+                              className={`report-status ${getStatusClass(
+                                item.status
+                              )}`}
+                            >
+                              {item.status}
+                            </span>
+
+                            <span className="history-date">
+                              {formatDate(
+                                item.created_at
+                              )}
+                            </span>
+
+                          </div>
+
+                          <p>
+                            {item.comment ||
+                              "Report status updated."}
+                          </p>
+
+                          {item.officer && (
+                            <small>
+                              Updated by:{" "}
+                              {item.officer}
+                            </small>
+                          )}
+
+                        </div>
+
+                      </div>
+                    )
+                  )}
+
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+    </main>
+  );
+}   
+
+           
+export default AdminReports;
+
